@@ -11,6 +11,8 @@ use codex_core::AuthManager;
 use codex_core::ConversationManager;
 use codex_core::config::Config;
 use codex_core::protocol::TokenUsage;
+use codex_protocol::models::ContentItem;
+use codex_protocol::models::ResponseItem;
 use color_eyre::eyre::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -44,6 +46,8 @@ pub(crate) struct App {
     pub(crate) overlay: Option<Overlay>,
     pub(crate) deferred_history_lines: Vec<Line<'static>>,
     has_emitted_history_lines: bool,
+    // Render guard so resumed history is shown once on startup.
+    resume_history_rendered: bool,
 
     pub(crate) enhanced_keys_supported: bool,
 
@@ -93,6 +97,7 @@ impl App {
             overlay: None,
             deferred_history_lines: Vec::new(),
             has_emitted_history_lines: false,
+            resume_history_rendered: false,
             commit_anim_running: Arc::new(AtomicBool::new(false)),
             backtrack: BacktrackState::default(),
         };
@@ -234,7 +239,16 @@ impl App {
                 self.chat_widget.handle_codex_event(event);
             }
             AppEvent::ConversationHistory(ev) => {
-                self.on_conversation_history_for_backtrack(tui, ev).await?;
+                // First, let backtrack flows consume it if one is pending.
+                self.on_conversation_history_for_backtrack(tui, ev.clone())
+                    .await?;
+
+                // If no backtrack is pending, treat this as an initial resume render.
+                if !self.resume_history_rendered && self.backtrack.pending.is_none() {
+                    self.render_resumed_history(tui, ev.entries);
+                    self.resume_history_rendered = true;
+                    tui.frame_requester().schedule_frame();
+                }
             }
             AppEvent::ExitRequest => {
                 return Ok(false);
@@ -278,6 +292,54 @@ impl App {
             }
         }
         Ok(true)
+    }
+
+    /// Render a snapshot of conversation history (e.g., after resume) into the transcript.
+    /// This focuses on user/assistant messages; tool call snapshots are skipped for now.
+    fn render_resumed_history(&mut self, tui: &mut crate::tui::Tui, entries: Vec<ResponseItem>) {
+        use crate::history_cell::AgentMessageCell;
+
+        use crate::history_cell::{self};
+
+        for item in entries {
+            match item {
+                ResponseItem::Message { role, content, .. } => {
+                    // Concatenate OutputText segments into a single string.
+                    let text = content
+                        .into_iter()
+                        .filter_map(|c| match c {
+                            ContentItem::OutputText { text } => Some(text),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if text.is_empty() {
+                        continue;
+                    }
+
+                    if role == "user" {
+                        self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
+                            history_cell::new_user_prompt(text),
+                        )));
+                    } else if role == "assistant" {
+                        // Build agent message lines; leave markdown/plain as-is (streaming renderer will wrap).
+                        let lines: Vec<ratatui::text::Line<'static>> =
+                            text.lines().map(|l| l.to_string().into()).collect();
+                        self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
+                            AgentMessageCell::new(lines, true),
+                        )));
+                    }
+                }
+                // Skip reasoning/tool/web_search for now in the initial resume render.
+                _ => {}
+            }
+        }
+
+        // After bulk insertions, ensure any deferred lines are flushed to the UI.
+        if !self.deferred_history_lines.is_empty() {
+            let lines = std::mem::take(&mut self.deferred_history_lines);
+            tui.insert_history_lines(lines);
+        }
     }
 
     pub(crate) fn token_usage(&self) -> codex_core::protocol::TokenUsage {

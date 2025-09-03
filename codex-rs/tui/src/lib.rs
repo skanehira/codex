@@ -18,6 +18,7 @@ use codex_ollama::DEFAULT_OSS_MODEL;
 use codex_protocol::config_types::SandboxMode;
 use codex_protocol::mcp_protocol::AuthMode;
 use std::fs::OpenOptions;
+use std::path::Path;
 use std::path::PathBuf;
 use tracing::error;
 use tracing_appender::non_blocking;
@@ -130,7 +131,34 @@ pub async fn run_main(
         show_raw_agent_reasoning: cli.oss.then_some(true),
         tools_web_search_request: cli.web_search.then_some(true),
     };
-    let raw_overrides = cli.config_overrides.raw_overrides.clone();
+    // Start from raw -c overrides and optionally inject experimental_resume before parsing.
+    let mut raw_overrides = cli.config_overrides.raw_overrides.clone();
+    if cli.resume
+        && !raw_overrides
+            .iter()
+            .any(|s| s.split('=').next().map(|k| k.trim()) == Some("experimental_resume"))
+    {
+        #[allow(clippy::print_stderr)]
+        match find_latest_rollout_under_codex_home() {
+            Ok(Some(path)) => {
+                raw_overrides.push(format!("experimental_resume={}", path.to_string_lossy()));
+            }
+            Ok(None) => {
+                eprintln!(
+                    "No previous sessions found under {}",
+                    codex_core::config::find_codex_home()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|_| "~/.codex".to_string())
+                );
+                std::process::exit(1);
+            }
+            Err(err) => {
+                eprintln!("Failed to locate latest session: {err}");
+                std::process::exit(1);
+            }
+        }
+    }
+
     let overrides_cli = codex_common::CliConfigOverrides { raw_overrides };
     let cli_kv_overrides = match overrides_cli.parse_overrides() {
         Ok(v) => v,
@@ -344,6 +372,54 @@ fn restore() {
             "failed to restore terminal. Run `reset` or restart your terminal to recover: {err}"
         );
     }
+}
+
+fn find_latest_rollout_under_codex_home() -> std::io::Result<Option<PathBuf>> {
+    let codex_home = codex_core::config::find_codex_home()?;
+    let sessions_root = codex_home.join("sessions");
+    find_latest_rollout(&sessions_root)
+}
+
+fn find_latest_rollout(root: &Path) -> std::io::Result<Option<PathBuf>> {
+    use std::fs;
+    use std::time::SystemTime;
+
+    if !root.exists() {
+        return Ok(None);
+    }
+
+    let mut stack = vec![root.to_path_buf()];
+    let mut best: Option<(SystemTime, PathBuf)> = None;
+
+    while let Some(dir) = stack.pop() {
+        let entries = match fs::read_dir(&dir) {
+            Ok(it) => it,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(ft) = entry.file_type() else { continue };
+            if ft.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            // Match rollout-*.jsonl
+            if let Some(name) = path.file_name().and_then(|s| s.to_str())
+                && name.starts_with("rollout-")
+                && name.ends_with(".jsonl")
+                && let Ok(meta) = entry.metadata()
+                && let Ok(mtime) = meta.modified()
+            {
+                match &mut best {
+                    Some((best_time, _)) if mtime <= *best_time => {}
+                    Some(best_slot) => *best_slot = (mtime, path.clone()),
+                    None => best = Some((mtime, path.clone())),
+                }
+            }
+        }
+    }
+
+    Ok(best.map(|(_, p)| p))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
