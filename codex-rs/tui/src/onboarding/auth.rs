@@ -8,6 +8,7 @@ use codex_login::ShutdownHandle;
 use codex_login::run_login_server;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
+use crossterm::event::KeyModifiers;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::prelude::Widget;
@@ -60,18 +61,50 @@ impl Drop for ContinueInBrowserState {
 
 impl KeyboardHandler for AuthModeWidget {
     fn handle_key_event(&mut self, key_event: KeyEvent) {
-        match key_event.code {
-            KeyCode::Up | KeyCode::Char('k') => {
+        match key_event {
+            KeyEvent {
+                code: KeyCode::Up, ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('k'),
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('p'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
                 self.highlighted_mode = AuthMode::ChatGPT;
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyEvent {
+                code: KeyCode::Down,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('j'),
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('n'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
                 self.highlighted_mode = AuthMode::ApiKey;
             }
-            KeyCode::Char('1') => {
+            KeyEvent {
+                code: KeyCode::Char('1'),
+                ..
+            } => {
                 self.start_chatgpt_login();
             }
-            KeyCode::Char('2') => self.verify_api_key(),
-            KeyCode::Enter => {
+            KeyEvent {
+                code: KeyCode::Char('2'),
+                ..
+            } => self.verify_api_key(),
+            KeyEvent {
+                code: KeyCode::Enter,
+                ..
+            } => {
                 let sign_in_state = { (*self.sign_in_state.read().unwrap()).clone() };
                 match sign_in_state {
                     SignInState::PickMode => match self.highlighted_mode {
@@ -91,7 +124,9 @@ impl KeyboardHandler for AuthModeWidget {
                     _ => {}
                 }
             }
-            KeyCode::Esc => {
+            KeyEvent {
+                code: KeyCode::Esc, ..
+            } => {
                 tracing::info!("Esc pressed");
                 let sign_in_state = { (*self.sign_in_state.read().unwrap()).clone() };
                 if matches!(sign_in_state, SignInState::ChatGptContinueInBrowser(_)) {

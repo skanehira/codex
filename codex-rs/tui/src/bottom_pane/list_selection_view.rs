@@ -110,8 +110,20 @@ impl BottomPaneView for ListSelectionView {
             KeyEvent {
                 code: KeyCode::Up, ..
             } => self.move_up(),
+            // Emacs-like: Ctrl+P -> move up
+            KeyEvent {
+                code: KeyCode::Char('p'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => self.move_up(),
             KeyEvent {
                 code: KeyCode::Down,
+                ..
+            } => self.move_down(),
+            // Emacs-like: Ctrl+N -> move down
+            KeyEvent {
+                code: KeyCode::Char('n'),
+                modifiers: KeyModifiers::CONTROL,
                 ..
             } => self.move_down(),
             KeyEvent {

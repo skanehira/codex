@@ -375,8 +375,26 @@ impl ChatComposer {
                 popup.move_up();
                 (InputResult::None, true)
             }
+            // Emacs-like: Ctrl+P -> move up
+            KeyEvent {
+                code: KeyCode::Char('p'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                popup.move_up();
+                (InputResult::None, true)
+            }
             KeyEvent {
                 code: KeyCode::Down,
+                ..
+            } => {
+                popup.move_down();
+                (InputResult::None, true)
+            }
+            // Emacs-like: Ctrl+N -> move down
+            KeyEvent {
+                code: KeyCode::Char('n'),
+                modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
                 popup.move_down();
@@ -499,8 +517,26 @@ impl ChatComposer {
                 popup.move_up();
                 (InputResult::None, true)
             }
+            // Emacs-like: Ctrl+P -> move up
+            KeyEvent {
+                code: KeyCode::Char('p'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                popup.move_up();
+                (InputResult::None, true)
+            }
             KeyEvent {
                 code: KeyCode::Down,
+                ..
+            } => {
+                popup.move_down();
+                (InputResult::None, true)
+            }
+            // Emacs-like: Ctrl+N -> move down
+            KeyEvent {
+                code: KeyCode::Char('n'),
+                modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
                 popup.move_down();
@@ -754,17 +790,21 @@ impl ChatComposer {
             // empty or when the cursor is at the correct position, to avoid
             // interfering with normal cursor movement.
             // -------------------------------------------------------------
-            KeyEvent {
-                code: KeyCode::Up | KeyCode::Down,
-                ..
-            } => {
+            // History navigation via Up/Down and Emacs-like Ctrl+P/Ctrl+N
+            KeyEvent { code: KeyCode::Up | KeyCode::Down, .. }
+            | KeyEvent { code: KeyCode::Char('p'), modifiers: KeyModifiers::CONTROL, .. }
+            | KeyEvent { code: KeyCode::Char('n'), modifiers: KeyModifiers::CONTROL, .. } => {
                 if self
                     .history
                     .should_handle_navigation(self.textarea.text(), self.textarea.cursor())
                 {
                     let replace_text = match key_event.code {
-                        KeyCode::Up => self.history.navigate_up(&self.app_event_tx),
-                        KeyCode::Down => self.history.navigate_down(&self.app_event_tx),
+                        KeyCode::Up | KeyCode::Char('p') => {
+                            self.history.navigate_up(&self.app_event_tx)
+                        }
+                        KeyCode::Down | KeyCode::Char('n') => {
+                            self.history.navigate_down(&self.app_event_tx)
+                        }
                         _ => unreachable!(),
                     };
                     if let Some(text) = replace_text {

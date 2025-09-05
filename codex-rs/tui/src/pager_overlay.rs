@@ -7,6 +7,7 @@ use crate::tui::TuiEvent;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
+use crossterm::event::KeyModifiers;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
@@ -204,8 +205,26 @@ impl PagerView {
             } => {
                 self.scroll_offset = self.scroll_offset.saturating_sub(1);
             }
+            // Emacs-like: Ctrl+P -> scroll up one line
+            KeyEvent {
+                code: KeyCode::Char('p'),
+                modifiers: KeyModifiers::CONTROL,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            } => {
+                self.scroll_offset = self.scroll_offset.saturating_sub(1);
+            }
             KeyEvent {
                 code: KeyCode::Down,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            } => {
+                self.scroll_offset = self.scroll_offset.saturating_add(1);
+            }
+            // Emacs-like: Ctrl+N -> scroll down one line
+            KeyEvent {
+                code: KeyCode::Char('n'),
+                modifiers: KeyModifiers::CONTROL,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             } => {

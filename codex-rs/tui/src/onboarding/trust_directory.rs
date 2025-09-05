@@ -4,6 +4,7 @@ use codex_core::config::set_project_trusted;
 use codex_core::git_info::resolve_root_git_project_for_trust;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
+use crossterm::event::KeyModifiers;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::prelude::Widget;
@@ -109,16 +110,48 @@ impl WidgetRef for &TrustDirectoryWidget {
 
 impl KeyboardHandler for TrustDirectoryWidget {
     fn handle_key_event(&mut self, key_event: KeyEvent) {
-        match key_event.code {
-            KeyCode::Up | KeyCode::Char('k') => {
+        match key_event {
+            KeyEvent {
+                code: KeyCode::Up, ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('k'),
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('p'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
                 self.highlighted = TrustDirectorySelection::Trust;
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyEvent {
+                code: KeyCode::Down,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('j'),
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('n'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
                 self.highlighted = TrustDirectorySelection::DontTrust;
             }
-            KeyCode::Char('1') => self.handle_trust(),
-            KeyCode::Char('2') => self.handle_dont_trust(),
-            KeyCode::Enter => match self.highlighted {
+            KeyEvent {
+                code: KeyCode::Char('1'),
+                ..
+            } => self.handle_trust(),
+            KeyEvent {
+                code: KeyCode::Char('2'),
+                ..
+            } => self.handle_dont_trust(),
+            KeyEvent {
+                code: KeyCode::Enter,
+                ..
+            } => match self.highlighted {
                 TrustDirectorySelection::Trust => self.handle_trust(),
                 TrustDirectorySelection::DontTrust => self.handle_dont_trust(),
             },

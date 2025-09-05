@@ -362,8 +362,24 @@ impl TextArea {
             } => {
                 self.move_cursor_up();
             }
+            // Emacs-like: Ctrl+P -> previous line
+            KeyEvent {
+                code: KeyCode::Char('p'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.move_cursor_up();
+            }
             KeyEvent {
                 code: KeyCode::Down,
+                ..
+            } => {
+                self.move_cursor_down();
+            }
+            // Emacs-like: Ctrl+N -> next line
+            KeyEvent {
+                code: KeyCode::Char('n'),
+                modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
                 self.move_cursor_down();
