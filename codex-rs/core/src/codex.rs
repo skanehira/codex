@@ -184,7 +184,6 @@ impl Codex {
             base_instructions: config.base_instructions.clone(),
             approval_policy: config.approval_policy,
             sandbox_policy: config.sandbox_policy.clone(),
-            disable_response_storage: config.disable_response_storage,
             notify: config.notify.clone(),
             cwd: config.cwd.clone(),
         };
@@ -301,7 +300,6 @@ pub(crate) struct TurnContext {
     pub(crate) approval_policy: AskForApproval,
     pub(crate) sandbox_policy: SandboxPolicy,
     pub(crate) shell_environment_policy: ShellEnvironmentPolicy,
-    pub(crate) disable_response_storage: bool,
     pub(crate) tools_config: ToolsConfig,
 }
 
@@ -334,8 +332,6 @@ struct ConfigureSession {
     approval_policy: AskForApproval,
     /// How to sandbox commands executed in the system
     sandbox_policy: SandboxPolicy,
-    /// Disable server-side response storage (send full context each request)
-    disable_response_storage: bool,
 
     /// Optional external notifier command tokens. Present only when the
     /// client wants the agent to spawn a program after each completed
@@ -370,7 +366,6 @@ impl Session {
             base_instructions,
             approval_policy,
             sandbox_policy,
-            disable_response_storage,
             notify,
             cwd,
         } = configure_session;
@@ -462,7 +457,6 @@ impl Session {
             sandbox_policy,
             shell_environment_policy: config.shell_environment_policy.clone(),
             cwd,
-            disable_response_storage,
         };
         let sess = Arc::new(Session {
             session_id,
@@ -584,9 +578,19 @@ impl Session {
         cwd: PathBuf,
         reason: Option<String>,
     ) -> oneshot::Receiver<ReviewDecision> {
+        // Add the tx_approve callback to the map before sending the request.
         let (tx_approve, rx_approve) = oneshot::channel();
+        let event_id = sub_id.clone();
+        let prev_entry = {
+            let mut state = self.state.lock_unchecked();
+            state.pending_approvals.insert(sub_id, tx_approve)
+        };
+        if prev_entry.is_some() {
+            warn!("Overwriting existing pending approval for sub_id: {event_id}");
+        }
+
         let event = Event {
-            id: sub_id.clone(),
+            id: event_id,
             msg: EventMsg::ExecApprovalRequest(ExecApprovalRequestEvent {
                 call_id,
                 command,
@@ -595,10 +599,6 @@ impl Session {
             }),
         };
         let _ = self.tx_event.send(event).await;
-        {
-            let mut state = self.state.lock_unchecked();
-            state.pending_approvals.insert(sub_id, tx_approve);
-        }
         rx_approve
     }
 
@@ -610,9 +610,19 @@ impl Session {
         reason: Option<String>,
         grant_root: Option<PathBuf>,
     ) -> oneshot::Receiver<ReviewDecision> {
+        // Add the tx_approve callback to the map before sending the request.
         let (tx_approve, rx_approve) = oneshot::channel();
+        let event_id = sub_id.clone();
+        let prev_entry = {
+            let mut state = self.state.lock_unchecked();
+            state.pending_approvals.insert(sub_id, tx_approve)
+        };
+        if prev_entry.is_some() {
+            warn!("Overwriting existing pending approval for sub_id: {event_id}");
+        }
+
         let event = Event {
-            id: sub_id.clone(),
+            id: event_id,
             msg: EventMsg::ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent {
                 call_id,
                 changes: convert_apply_patch_to_protocol(action),
@@ -621,10 +631,6 @@ impl Session {
             }),
         };
         let _ = self.tx_event.send(event).await;
-        {
-            let mut state = self.state.lock_unchecked();
-            state.pending_approvals.insert(sub_id, tx_approve);
-        }
         rx_approve
     }
 
@@ -1105,7 +1111,6 @@ async fn submission_loop(
                     sandbox_policy: new_sandbox_policy.clone(),
                     shell_environment_policy: prev.shell_environment_policy.clone(),
                     cwd: new_cwd.clone(),
-                    disable_response_storage: prev.disable_response_storage,
                 };
 
                 // Install the new persistent context for subsequent tasks/turns.
@@ -1187,7 +1192,6 @@ async fn submission_loop(
                         sandbox_policy,
                         shell_environment_policy: turn_context.shell_environment_policy.clone(),
                         cwd,
-                        disable_response_storage: turn_context.disable_response_storage,
                     };
                     // TODO: record the new environment context in the conversation history
                     // no current task, spawn a new one with the per‑turn context
@@ -1592,7 +1596,6 @@ async fn run_turn(
 
     let prompt = Prompt {
         input,
-        store: !turn_context.disable_response_storage,
         tools,
         base_instructions_override: turn_context.base_instructions.clone(),
     };
@@ -1846,7 +1849,6 @@ async fn run_compact_task(
 
     let prompt = Prompt {
         input: turn_input,
-        store: !turn_context.disable_response_storage,
         tools: Vec::new(),
         base_instructions_override: Some(compact_instructions.clone()),
     };
